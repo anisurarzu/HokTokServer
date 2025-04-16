@@ -7,24 +7,26 @@ const {
   updateProductStatus,
   hardDeleteProduct,
   createProductReview,
+  getProductsByPriceRange,
+  getProductsByCategory,
+  getProductsByCategoryAndSize,
 } = require("../controllers/productController");
 const { protect } = require("../middleware/authMiddleware");
 
 const router = express.Router();
 
 // Public routes
-router.get("/product", getAllProducts); // Get all products
-router.get("/product/:id", getProductById); // Get single product
+router.get("/product", getAllProducts);
+router.get("/product/:id", getProductById);
+router.get("/product/price/:min/:max", getProductsByPriceRange);
+router.get("/product/category/:category", getProductsByCategory);
+router.get("/product/category/:category/size", getProductsByCategoryAndSize);
 
 // Protected routes
-router.post("/product", protect, createProduct); // Create new product
-router.put("/product/:id", protect, updateProduct); // Update product info
-router.post("/product/:id/reviews", protect, createProductReview); // Add review
-
-// Soft delete product (statusID=255)
+router.post("/product", protect, createProduct);
+router.put("/product/:id", protect, updateProduct);
+router.post("/product/:id/reviews", protect, createProductReview);
 router.put("/product/soft/:id", protect, updateProductStatus);
-
-// Hard delete product (remove from database)
 router.delete("/product/hard/:id", protect, hardDeleteProduct);
 
 module.exports = router;

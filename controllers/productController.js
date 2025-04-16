@@ -189,6 +189,54 @@ const createProductReview = asyncHandler(async (req, res) => {
   }
 });
 
+// @desc    Get products by price range
+// @route   GET /product/price/:min/:max
+// @access  Public
+const getProductsByPriceRange = asyncHandler(async (req, res) => {
+  const { min, max } = req.params;
+
+  const products = await Product.find({
+    price: { $gte: Number(min), $lte: Number(max) },
+  });
+
+  res.json(products);
+});
+
+// @desc    Get products by category
+// @route   GET /product/category/:category
+// @access  Public
+const getProductsByCategory = asyncHandler(async (req, res) => {
+  const { category } = req.params;
+
+  const products = await Product.find({
+    category: { $regex: new RegExp(category, "i") },
+  });
+
+  res.json(products);
+});
+
+// @desc    Get products by category and size
+// @route   GET /product/category/:category/size
+// @access  Public
+const getProductsByCategoryAndSize = asyncHandler(async (req, res) => {
+  const { category } = req.params;
+  const { chest, length, sleeve, shoulder } = req.query;
+
+  // Build size query object
+  const sizeQuery = {};
+  if (chest) sizeQuery["sizes.chest"] = { $gte: Number(chest) };
+  if (length) sizeQuery["sizes.length"] = { $gte: Number(length) };
+  if (sleeve) sizeQuery["sizes.sleeve"] = { $gte: Number(sleeve) };
+  if (shoulder) sizeQuery["sizes.shoulder"] = { $gte: Number(shoulder) };
+
+  const products = await Product.find({
+    category: { $regex: new RegExp(category, "i") },
+    ...sizeQuery,
+  });
+
+  res.json(products);
+});
+
 module.exports = {
   createProduct,
   getAllProducts,
@@ -197,4 +245,7 @@ module.exports = {
   updateProductStatus,
   hardDeleteProduct,
   createProductReview,
+  getProductsByPriceRange,
+  getProductsByCategory,
+  getProductsByCategoryAndSize,
 };
