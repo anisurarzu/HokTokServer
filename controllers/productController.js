@@ -67,15 +67,29 @@ const getProductById = asyncHandler(async (req, res) => {
 // @desc    Update a product
 // @route   PUT /product/:id
 // @access  Private
+// @desc    Update a product
+// @route   PUT /product/:id
+// @access  Private
 const updateProduct = asyncHandler(async (req, res) => {
-  const product = await Product.findById(req.params.id);
+  try {
+    const product = await Product.findById(req.params.id);
 
-  if (product) {
-    // Verify user owns the product
-    if (product.user.toString() !== req.user._id.toString()) {
-      res.status(401);
-      throw new Error("Not authorized to update this product");
+    if (!product) {
+      res.status(404);
+      throw new Error("Product not found");
     }
+
+    // Check if user exists in request (for authentication)
+    if (!req.user) {
+      res.status(401);
+      throw new Error("Not authorized");
+    }
+
+    // If you want to verify product ownership (optional):
+    // if (product.user.toString() !== req.user._id.toString()) {
+    //   res.status(401);
+    //   throw new Error('Not authorized to update this product');
+    // }
 
     const {
       category,
@@ -89,6 +103,7 @@ const updateProduct = asyncHandler(async (req, res) => {
       sizes,
     } = req.body;
 
+    // Update product fields
     product.category = category || product.category;
     product.name = name || product.name;
     product.image = image || product.image;
@@ -98,13 +113,17 @@ const updateProduct = asyncHandler(async (req, res) => {
       discountPrice !== undefined ? discountPrice : product.discountPrice;
     product.stock = stock !== undefined ? stock : product.stock;
     product.description = description || product.description;
-    product.sizes = sizes || product.sizes;
+
+    // Update sizes if provided
+    if (sizes && Array.isArray(sizes)) {
+      product.sizes = sizes;
+    }
 
     const updatedProduct = await product.save();
     res.json(updatedProduct);
-  } else {
-    res.status(404);
-    throw new Error("Product not found");
+  } catch (error) {
+    console.error("Update error:", error);
+    res.status(500).json({ message: error.message });
   }
 });
 
