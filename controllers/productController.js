@@ -7,15 +7,21 @@ const asyncHandler = require("express-async-handler");
 const createProduct = asyncHandler(async (req, res) => {
   const {
     category,
+    subCategory,
     name,
-    image,
+    images,
     price,
     prevPrice,
     discountPrice,
-    stock,
     description,
     sizes,
   } = req.body;
+
+  // Validate images array
+  if (!images || images.length === 0 || images.length > 3) {
+    res.status(400);
+    throw new Error("Please provide 1-3 product images");
+  }
 
   const productExists = await Product.findOne({ name });
 
@@ -24,15 +30,18 @@ const createProduct = asyncHandler(async (req, res) => {
     throw new Error("Product already exists");
   }
 
+  // Calculate total stock from sizes
+  const totalStock = sizes.reduce((sum, size) => sum + (size.stock || 0), 0);
+
   const product = await Product.create({
-    user: req.user._id, // Added user reference
+    user: req.user._id,
     category,
+    subCategory,
     name,
-    image,
+    images,
     price,
     prevPrice,
     discountPrice,
-    stock,
     description,
     sizes,
     rating: 0,
@@ -67,9 +76,6 @@ const getProductById = asyncHandler(async (req, res) => {
 // @desc    Update a product
 // @route   PUT /product/:id
 // @access  Private
-// @desc    Update a product
-// @route   PUT /product/:id
-// @access  Private
 const updateProduct = asyncHandler(async (req, res) => {
   try {
     const product = await Product.findById(req.params.id);
@@ -79,39 +85,38 @@ const updateProduct = asyncHandler(async (req, res) => {
       throw new Error("Product not found");
     }
 
-    // Check if user exists in request (for authentication)
     if (!req.user) {
       res.status(401);
       throw new Error("Not authorized");
     }
 
-    // If you want to verify product ownership (optional):
-    // if (product.user.toString() !== req.user._id.toString()) {
-    //   res.status(401);
-    //   throw new Error('Not authorized to update this product');
-    // }
-
     const {
       category,
+      subCategory,
       name,
-      image,
+      images,
       price,
       prevPrice,
       discountPrice,
-      stock,
       description,
       sizes,
     } = req.body;
 
+    // Validate images array
+    if (images && (images.length === 0 || images.length > 3)) {
+      res.status(400);
+      throw new Error("Please provide 1-3 product images");
+    }
+
     // Update product fields
     product.category = category || product.category;
+    product.subCategory = subCategory || product.subCategory;
     product.name = name || product.name;
-    product.image = image || product.image;
+    product.images = images || product.images;
     product.price = price || product.price;
     product.prevPrice = prevPrice !== undefined ? prevPrice : product.prevPrice;
     product.discountPrice =
       discountPrice !== undefined ? discountPrice : product.discountPrice;
-    product.stock = stock !== undefined ? stock : product.stock;
     product.description = description || product.description;
 
     // Update sizes if provided
@@ -152,21 +157,49 @@ const updateProductStatus = asyncHandler(async (req, res) => {
 // @desc    Hard delete product
 // @route   DELETE /product/hard/:id
 // @access  Private
+// @desc    Hard delete product
+// @route   DELETE /product/hard/:id
+// @access  Private
+// @desc    Hard delete product
+// @route   DELETE /product/hard/:id
+// @access  Private
 const hardDeleteProduct = asyncHandler(async (req, res) => {
-  const product = await Product.findById(req.params.id);
+  try {
+    const product = await Product.findById(req.params.id);
 
-  if (product) {
-    // Verify user owns the product
-    if (product.user.toString() !== req.user._id.toString()) {
-      res.status(401);
-      throw new Error("Not authorized to delete this product");
+    if (!product) {
+      return res.status(404).json({ message: "Product not found" });
+    }
+
+    // If you're not enforcing ownership, simply delete the product
+    await product.deleteOne();
+    return res.json({ message: "Product removed from database" });
+
+    /* 
+    // If you want to enforce ownership, use this version instead:
+    if (!req.user) {
+      return res.status(401).json({ message: "Not authenticated" });
+    }
+
+    // Check if product has a user reference
+    if (!product.user) {
+      return res.status(403).json({ message: "Product has no owner" });
+    }
+
+    // Compare IDs safely
+    const productUserId = product.user._id || product.user;
+    if (productUserId.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: "Not authorized to delete this product" });
     }
 
     await product.deleteOne();
-    res.json({ message: "Product removed from database" });
-  } else {
-    res.status(404);
-    throw new Error("Product not found");
+    return res.json({ message: "Product removed from database" });
+    */
+  } catch (error) {
+    console.error("Delete error:", error);
+    return res.status(500).json({
+      message: error.message || "Failed to delete product",
+    });
   }
 });
 

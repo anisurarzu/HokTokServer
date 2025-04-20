@@ -3,7 +3,7 @@ const mongoose = require("mongoose");
 const SizeSchema = new mongoose.Schema({
   size: {
     type: String,
-    required: false,
+    required: true,
   },
   chest: {
     type: Number,
@@ -21,6 +21,11 @@ const SizeSchema = new mongoose.Schema({
     type: Number,
     required: true,
   },
+  stock: {
+    type: Number,
+    required: true,
+    default: 0,
+  },
 });
 
 const ProductSchema = new mongoose.Schema(
@@ -29,14 +34,19 @@ const ProductSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    subCategory: {
+      type: String,
+      required: false, // Make it optional or required based on your needs
+    },
     name: {
       type: String,
       required: true,
       unique: true,
     },
-    image: {
-      type: String,
+    images: {
+      type: [String], // Array of image URLs (max 3)
       required: true,
+      validate: [arrayLimit, "{PATH} exceeds the limit of 3"],
     },
     price: {
       type: Number,
@@ -50,11 +60,6 @@ const ProductSchema = new mongoose.Schema(
       type: Number,
       required: false,
     },
-    stock: {
-      type: Number,
-      required: true,
-      default: 0,
-    },
     description: {
       type: String,
       required: true,
@@ -63,7 +68,6 @@ const ProductSchema = new mongoose.Schema(
       type: [SizeSchema], // Array of size objects
       required: true,
     },
-
     rating: {
       type: Number,
       default: 0,
@@ -77,5 +81,10 @@ const ProductSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Custom validator for images array limit
+function arrayLimit(val) {
+  return val.length <= 3;
+}
 
 module.exports = mongoose.model("Product", ProductSchema);

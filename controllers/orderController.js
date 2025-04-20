@@ -1,195 +1,80 @@
 const Order = require("../models/Order");
-const Product = require("../models/Product");
 const asyncHandler = require("express-async-handler");
+const mongoose = require("mongoose");
 
 // @desc    Create new order
 // @route   POST /api/orders
-// @access  Private
+// @access  Public (or Private if you add auth)
 const createOrder = asyncHandler(async (req, res) => {
-  const {
-    items,
-    shippingAddress,
-    paymentMethod,
-    itemsPrice,
-    taxPrice,
-    shippingPrice,
-    totalPrice,
-  } = req.body;
+  const { customer, delivery, payment, items, subtotal, total, note } =
+    req.body;
 
-  if (items && items.length === 0) {
+  // Validate items
+  if (!items || items.length === 0) {
     res.status(400);
     throw new Error("No order items");
   }
 
-  // Verify products and update stock
-  for (const item of items) {
-    const product = await Product.findById(item.product);
-    if (!product) {
-      res.status(404);
-      throw new Error(`Product not found: ${item.product}`);
-    }
-
-    // Find the specific size in product
-    const sizeExists = product.sizes.some(
-      (s) =>
-        s.chest === item.size.chest &&
-        s.length === item.size.length &&
-        s.sleeve === item.size.sleeve &&
-        s.shoulder === item.size.shoulder
-    );
-
-    if (!sizeExists) {
-      res.status(400);
-      throw new Error(
-        `Selected size not available for product ${product.name}`
-      );
-    }
-
-    // Check stock
-    if (product.stock < item.quantity) {
-      res.status(400);
-      throw new Error(`Insufficient stock for product ${product.name}`);
-    }
+  // Validate required fields
+  if (!customer?.name || !customer?.phone || !customer?.address) {
+    res.status(400);
+    throw new Error("Missing required customer information");
   }
+
+  // Calculate totals if not provided
+  const calculatedSubtotal = items.reduce(
+    (sum, item) => sum + (item.price || 0) * (item.quantity || 0),
+    0
+  );
+  const calculatedTotal = calculatedSubtotal + (delivery?.cost || 0);
 
   const order = new Order({
-    user: req.user._id,
+    customer,
+    delivery: {
+      type: delivery?.type || "inside",
+      cost: delivery?.cost || 0,
+    },
+    payment: {
+      method: (payment?.method || "cod").toLowerCase(),
+      amount: payment?.amount || calculatedTotal,
+      paid: payment?.paid || false,
+    },
     items: items.map((item) => ({
       product: item.product,
-      quantity: item.quantity,
-      price: item.price,
       size: item.size,
+      price: item.price,
+      quantity: item.quantity,
     })),
-    shippingAddress,
-    paymentMethod,
-    itemsPrice,
-    taxPrice,
-    shippingPrice,
-    totalPrice,
+    subtotal: subtotal || calculatedSubtotal,
+    total: total || calculatedTotal,
+    note,
+    status: {
+      type: "pending",
+      orderDate: new Date(),
+    },
   });
-
-  // Update product stock
-  for (const item of items) {
-    await Product.findByIdAndUpdate(item.product, {
-      $inc: { stock: -item.quantity },
-    });
-  }
 
   const createdOrder = await order.save();
   res.status(201).json(createdOrder);
 });
 
-// @desc    Get all orders
-// @route   GET /api/orders
-// @access  Private/Admin
-const getOrders = asyncHandler(async (req, res) => {
-  const { status } = req.query;
-
-  // Build query object
-  const query = {};
-  if (status && status !== "all") {
-    query.status = status;
-  }
-
-  const orders = await Order.find(query)
-    .populate("user", "name email")
-    .populate({
-      path: "items.product",
-      select: "name image price",
-    })
-    .sort({ createdAt: -1 });
-
-  res.json(orders);
-});
-
-// @desc    Get orders count by status
-// @route   GET /api/orders/count
-// @access  Private/Admin
-const getOrdersCount = asyncHandler(async (req, res) => {
-  const counts = await Order.aggregate([
-    {
-      $group: {
-        _id: "$status",
-        count: { $sum: 1 },
-      },
-    },
-  ]);
-
-  // Convert array to object
-  const result = {
-    all: counts.reduce((sum, item) => sum + item.count, 0),
-  };
-
-  counts.forEach((item) => {
-    result[item._id] = item.count;
-  });
-
-  res.json(result);
-});
-
 // @desc    Get order by ID
 // @route   GET /api/orders/:id
-// @access  Private
+// @access  Public/Private
 const getOrderById = asyncHandler(async (req, res) => {
-  const order = await Order.findById(req.params.id)
-    .populate("user", "name email")
-    .populate({
-      path: "items.product",
-      select: "name image price category",
-    });
-
-  if (!order) {
-    res.status(404);
-    throw new Error("Order not found");
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    res.status(400);
+    throw new Error("Invalid order ID format");
   }
 
-  if (
-    order.user._id.toString() !== req.user._id.toString() &&
-    !req.user.isAdmin
-  ) {
-    res.status(401);
-    throw new Error("Not authorized");
-  }
-
-  res.json(order);
-});
-
-// @desc    Get logged in user orders
-// @route   GET /api/orders/myorders
-// @access  Private
-const getMyOrders = asyncHandler(async (req, res) => {
-  const orders = await Order.find({ user: req.user._id })
-    .populate({
-      path: "items.product",
-      select: "name image price",
-    })
-    .sort({ createdAt: -1 });
-  res.json(orders);
-});
-
-// @desc    Update order to paid
-// @route   PUT /api/orders/:id/pay
-// @access  Private
-const updateOrderToPaid = asyncHandler(async (req, res) => {
   const order = await Order.findById(req.params.id);
 
-  if (!order) {
+  if (order) {
+    res.json(order);
+  } else {
     res.status(404);
     throw new Error("Order not found");
   }
-
-  order.isPaid = true;
-  order.paidAt = Date.now();
-  order.paymentResult = {
-    id: req.body.id,
-    status: req.body.status,
-    update_time: req.body.update_time,
-    email_address: req.body.payer.email_address,
-  };
-  order.status = "Processing";
-
-  const updatedOrder = await order.save();
-  res.json(updatedOrder);
 });
 
 // @desc    Update order status
@@ -197,6 +82,12 @@ const updateOrderToPaid = asyncHandler(async (req, res) => {
 // @access  Private/Admin
 const updateOrderStatus = asyncHandler(async (req, res) => {
   const { status } = req.body;
+
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    res.status(400);
+    throw new Error("Invalid order ID format");
+  }
+
   const order = await Order.findById(req.params.id);
 
   if (!order) {
@@ -204,37 +95,143 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     throw new Error("Order not found");
   }
 
-  order.status = status;
+  const validStatuses = [
+    "pending",
+    "processing",
+    "shipped",
+    "delivered",
+    "cancelled",
+  ];
+  if (!validStatuses.includes(status.toLowerCase())) {
+    res.status(400);
+    throw new Error("Invalid status value");
+  }
 
-  if (status === "Delivered") {
-    order.isDelivered = true;
-    order.deliveredAt = Date.now();
+  order.status.type = status.toLowerCase();
+
+  if (status.toLowerCase() === "delivered") {
+    order.status.orderDeliveryDate = new Date();
+    if (order.payment.method === "cod") {
+      order.payment.paid = true;
+    }
   }
 
   const updatedOrder = await order.save();
   res.json(updatedOrder);
 });
 
-// @desc    Soft delete order
-// @route   PUT /api/orders/soft/:id
+// @desc    Get all orders
+// @route   GET /api/orders
 // @access  Private/Admin
-const softDeleteOrder = asyncHandler(async (req, res) => {
-  const order = await Order.findById(req.params.id);
+const getOrders = asyncHandler(async (req, res) => {
+  const { page = 1, limit = 10, status, search } = req.query;
+  const query = {};
 
-  if (!order) {
-    res.status(404);
-    throw new Error("Order not found");
+  if (status) {
+    query["status.type"] = status.toLowerCase();
   }
 
-  order.status = "Cancelled";
-  await order.save();
-  res.json({ message: "Order cancelled (soft deleted)" });
+  if (search) {
+    query.$or = [
+      { "customer.name": { $regex: search, $options: "i" } },
+      { "customer.phone": { $regex: search, $options: "i" } },
+      { orderNo: { $regex: search, $options: "i" } },
+    ];
+  }
+
+  const orders = await Order.find(query)
+    .sort({ createdAt: -1 })
+    .limit(limit * 1)
+    .skip((page - 1) * limit)
+    .exec();
+
+  const count = await Order.countDocuments(query);
+
+  res.json({
+    orders,
+    totalPages: Math.ceil(count / limit),
+    currentPage: parseInt(page),
+    totalOrders: count,
+  });
 });
 
-// @desc    Hard delete order
-// @route   DELETE /api/orders/hard/:id
+// @desc    Get order counts by status
+// @route   GET /api/orders/count
 // @access  Private/Admin
-const hardDeleteOrder = asyncHandler(async (req, res) => {
+const getOrderCounts = asyncHandler(async (req, res) => {
+  try {
+    const counts = await Order.aggregate([
+      {
+        $facet: {
+          all: [{ $count: "count" }],
+          pending: [
+            { $match: { "status.type": "pending" } },
+            { $count: "count" },
+          ],
+          processing: [
+            { $match: { "status.type": "processing" } },
+            { $count: "count" },
+          ],
+          shipped: [
+            { $match: { "status.type": "shipped" } },
+            { $count: "count" },
+          ],
+          delivered: [
+            { $match: { "status.type": "delivered" } },
+            { $count: "count" },
+          ],
+          cancelled: [
+            { $match: { "status.type": "cancelled" } },
+            { $count: "count" },
+          ],
+        },
+      },
+      {
+        $project: {
+          all: { $ifNull: [{ $arrayElemAt: ["$all.count", 0] }, 0] },
+          pending: { $ifNull: [{ $arrayElemAt: ["$pending.count", 0] }, 0] },
+          processing: {
+            $ifNull: [{ $arrayElemAt: ["$processing.count", 0] }, 0],
+          },
+          shipped: { $ifNull: [{ $arrayElemAt: ["$shipped.count", 0] }, 0] },
+          delivered: {
+            $ifNull: [{ $arrayElemAt: ["$delivered.count", 0] }, 0],
+          },
+          cancelled: {
+            $ifNull: [{ $arrayElemAt: ["$cancelled.count", 0] }, 0],
+          },
+        },
+      },
+    ]);
+
+    res.json(
+      counts[0] || {
+        all: 0,
+        pending: 0,
+        processing: 0,
+        shipped: 0,
+        delivered: 0,
+        cancelled: 0,
+      }
+    );
+  } catch (error) {
+    console.error("Error counting orders:", error);
+    res.status(500).json({
+      message: "Error counting orders",
+      error: error.message,
+    });
+  }
+});
+
+// @desc    Delete an order
+// @route   DELETE /api/orders/:id
+// @access  Private/Admin
+const deleteOrder = asyncHandler(async (req, res) => {
+  if (!mongoose.Types.ObjectId.isValid(req.params.id)) {
+    res.status(400);
+    throw new Error("Invalid order ID format");
+  }
+
   const order = await Order.findById(req.params.id);
 
   if (!order) {
@@ -242,27 +239,15 @@ const hardDeleteOrder = asyncHandler(async (req, res) => {
     throw new Error("Order not found");
   }
 
-  // Restore product stock if order wasn't cancelled
-  if (order.status !== "Cancelled") {
-    for (const item of order.items) {
-      await Product.findByIdAndUpdate(item.product, {
-        $inc: { stock: item.quantity },
-      });
-    }
-  }
-
-  await order.deleteOne();
-  res.json({ message: "Order removed from database" });
+  await order.remove();
+  res.json({ message: "Order removed" });
 });
 
 module.exports = {
   createOrder,
-  getOrders,
-  getOrdersCount,
   getOrderById,
-  getMyOrders,
-  updateOrderToPaid,
   updateOrderStatus,
-  softDeleteOrder,
-  hardDeleteOrder,
+  getOrders,
+  getOrderCounts,
+  deleteOrder,
 };

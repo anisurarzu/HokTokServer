@@ -1,109 +1,174 @@
 const mongoose = require("mongoose");
 
-const OrderItemSchema = new mongoose.Schema(
+const orderItemSchema = new mongoose.Schema(
   {
     product: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Product",
-      required: true,
+      required: [true, "Product ID is required"],
     },
-    quantity: {
-      type: Number,
-      required: true,
-      min: 1,
+    size: {
+      type: String,
+      required: [true, "Size is required"],
+      uppercase: true,
+      enum: ["XS", "S", "M", "L", "XL", "XXL", "XXXL"],
     },
     price: {
       type: Number,
-      required: true,
+      required: [true, "Price is required"],
+      min: [0, "Price cannot be negative"],
     },
-    size: {
-      size: String,
-      chest: Number,
-      length: Number,
-      sleeve: Number,
-      shoulder: Number,
+    quantity: {
+      type: Number,
+      required: [true, "Quantity is required"],
+      min: [1, "Minimum quantity is 1"],
     },
   },
   { _id: false }
 );
 
-const OrderSchema = new mongoose.Schema(
+const orderSchema = new mongoose.Schema(
   {
-    user: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
-      required: true,
-    },
-    items: [OrderItemSchema],
-    shippingAddress: {
-      name: String,
-      address: String,
-      city: String,
-      postalCode: String,
-      country: String,
-      phone: String,
-    },
-    paymentMethod: {
+    orderNo: {
       type: String,
-      required: true,
-      enum: ["COD", "Card", "BankTransfer"],
-      default: "COD",
+      unique: true,
+      index: true,
     },
-    paymentResult: {
-      id: String,
-      status: String,
-      update_time: String,
-      email_address: String,
+    customer: {
+      name: {
+        type: String,
+        required: [true, "Customer name is required"],
+        trim: true,
+      },
+      phone: {
+        type: String,
+        required: [true, "Phone number is required"],
+        validate: {
+          validator: function (v) {
+            return /^(?:\+88|01)?(?:\d{11}|\d{13})$/.test(v);
+          },
+          message: (props) => `${props.value} is not a valid phone number!`,
+        },
+      },
+      address: {
+        type: String,
+        required: [true, "Address is required"],
+        trim: true,
+      },
     },
-    itemsPrice: {
-      type: Number,
-      required: true,
-      default: 0.0,
-    },
-    taxPrice: {
-      type: Number,
-      required: true,
-      default: 0.0,
-    },
-    shippingPrice: {
-      type: Number,
-      required: true,
-      default: 0.0,
-    },
-    totalPrice: {
-      type: Number,
-      required: true,
-      default: 0.0,
-    },
-    isPaid: {
-      type: Boolean,
-      required: true,
-      default: false,
-    },
-    paidAt: {
-      type: Date,
-    },
-    isDelivered: {
-      type: Boolean,
-      required: true,
-      default: false,
-    },
-    deliveredAt: {
-      type: Date,
+    delivery: {
+      type: {
+        type: String,
+        required: [true, "Delivery type is required"],
+        enum: {
+          values: ["inside", "outside"],
+          message: 'Delivery type must be either "inside" or "outside"',
+        },
+        lowercase: true,
+      },
+      cost: {
+        type: Number,
+        required: [true, "Delivery cost is required"],
+        min: [0, "Delivery cost cannot be negative"],
+      },
     },
     status: {
-      type: String,
-      enum: ["Pending", "Processing", "Shipped", "Delivered", "Cancelled"],
-      default: "Pending",
+      type: {
+        type: String,
+        required: [true, "Status is required"],
+        enum: ["pending", "processing", "shipped", "delivered", "cancelled"],
+        lowercase: true,
+        default: "pending",
+      },
+      orderDate: {
+        type: Date,
+        default: Date.now,
+      },
+      orderDeliveryDate: {
+        type: Date,
+      },
     },
-    statusID: {
+    payment: {
+      method: {
+        type: String,
+        required: [true, "Payment method is required"],
+        enum: {
+          values: ["cod", "card", "banktransfer"],
+          message: 'Payment method must be "cod", "card", or "banktransfer"',
+        },
+        lowercase: true,
+        default: "cod",
+      },
+      amount: {
+        type: Number,
+        required: [true, "Payment amount is required"],
+        min: [0, "Payment amount cannot be negative"],
+      },
+      paid: {
+        type: Boolean,
+        default: false,
+      },
+    },
+    items: {
+      type: [orderItemSchema],
+      required: [true, "Order items are required"],
+      validate: {
+        validator: function (v) {
+          return v.length > 0;
+        },
+        message: "Order must have at least one item",
+      },
+    },
+    subtotal: {
       type: Number,
-      default: 1, // Matching your product statusID system
+      required: [true, "Subtotal is required"],
+      min: [0, "Subtotal cannot be negative"],
+    },
+    total: {
+      type: Number,
+      required: [true, "Total is required"],
+      min: [0, "Total cannot be negative"],
+    },
+    note: {
+      type: String,
+      maxlength: [500, "Note cannot be longer than 500 characters"],
     },
   },
   {
     timestamps: true,
+    toJSON: { virtuals: true },
+    toObject: { virtuals: true },
   }
 );
 
-module.exports = mongoose.model("Order", OrderSchema);
+// Pre-save hook to generate order number
+orderSchema.pre("save", async function (next) {
+  if (!this.isNew) return next();
+
+  const now = new Date();
+  const year = now.getFullYear().toString().slice(-2);
+  const month = (now.getMonth() + 1).toString().padStart(2, "0");
+
+  // Find count of orders this month
+  const count = await mongoose.model("Order").countDocuments({
+    createdAt: {
+      $gte: new Date(now.getFullYear(), now.getMonth(), 1),
+      $lt: new Date(now.getFullYear(), now.getMonth() + 1, 1),
+    },
+  });
+
+  this.orderNo = `${year}${month}${(count + 1).toString().padStart(3, "0")}`;
+  next();
+});
+
+// Update delivery date when status changes to delivered
+orderSchema.pre("save", function (next) {
+  if (this.isModified("status.type") && this.status.type === "delivered") {
+    this.status.orderDeliveryDate = new Date();
+    this.payment.paid =
+      this.payment.method === "cod" ? true : this.payment.paid;
+  }
+  next();
+});
+
+module.exports = mongoose.model("Order", orderSchema);
