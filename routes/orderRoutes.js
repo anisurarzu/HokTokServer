@@ -11,7 +11,7 @@ router.put("/:id/status", orderController.updateOrderStatus);
 router.get("/", orderController.getOrders);
 
 router.get("/count", orderController.getOrderCounts);
-router.delete("/:id", orderController.deleteOrder);
+router.delete("/hard/:id", orderController.deleteOrder);
 // Add similar routes for other statuses
 
 module.exports = router;

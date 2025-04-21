@@ -289,6 +289,43 @@ const getProductsByCategoryAndSize = asyncHandler(async (req, res) => {
   res.json(products);
 });
 
+// @desc    Get products by name (partial match)
+// @route   GET /product/name/:name
+// @access  Public
+const getProductsByName = asyncHandler(async (req, res) => {
+  const { name } = req.params;
+
+  if (!name || name.trim().length < 2) {
+    res.status(400);
+    throw new Error("Please provide at least 2 characters for search");
+  }
+
+  const products = await Product.find({
+    name: { $regex: new RegExp(name, "i") }, // Case-insensitive partial match
+  });
+
+  res.json({
+    count: products.length,
+    products,
+  });
+});
+
+// @desc    Get products by subcategory
+// @route   GET /product/subcategory/:subcategory
+// @access  Public
+const getProductsBySubCategory = asyncHandler(async (req, res) => {
+  const { subcategory } = req.params;
+
+  const products = await Product.find({
+    subCategory: { $regex: new RegExp(subcategory, "i") }, // Case-insensitive match
+  });
+
+  res.json({
+    count: products.length,
+    products,
+  });
+});
+
 module.exports = {
   createProduct,
   getAllProducts,
@@ -300,4 +337,6 @@ module.exports = {
   getProductsByPriceRange,
   getProductsByCategory,
   getProductsByCategoryAndSize,
+  getProductsByName,
+  getProductsBySubCategory,
 };
