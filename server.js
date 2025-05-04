@@ -5,6 +5,7 @@ const authRoutes = require("./routes/authRoutes");
 const productRoutes = require("./routes/productRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const sliderRoutes = require("./routes/sliderRoutes");
+const storyRoutes = require("./routes/storyRoutes");
 
 require("dotenv").config();
 
@@ -23,6 +24,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api", productRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/sliders", sliderRoutes);
+app.use("/api/stories", storyRoutes);
 
 // Root Route
 app.get("/", (req, res) => {
