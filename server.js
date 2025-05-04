@@ -4,6 +4,7 @@ const connectDB = require("./config/db");
 const authRoutes = require("./routes/authRoutes");
 const productRoutes = require("./routes/productRoutes");
 const orderRoutes = require("./routes/orderRoutes");
+const sliderRoutes = require("./routes/sliderRoutes");
 
 require("dotenv").config();
 
@@ -21,6 +22,7 @@ app.use(cors());
 app.use("/api/auth", authRoutes);
 app.use("/api", productRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/sliders", sliderRoutes);
 
 // Root Route
 app.get("/", (req, res) => {
