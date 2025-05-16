@@ -323,6 +323,7 @@ const getOrders = asyncHandler(async (req, res) => {
   }
 
   const orders = await Order.find(query)
+    .populate("items.product", "name images") // ✅ Populates product name & images inside items array
     .sort({ createdAt: -1 })
     .limit(limit * 1)
     .skip((page - 1) * limit)
