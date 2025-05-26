@@ -29,6 +29,12 @@ const orderItemSchema = new mongoose.Schema(
 
 const orderSchema = new mongoose.Schema(
   {
+    // ✅ Add user field here to fix populate error
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+    },
+
     orderNo: {
       type: String,
       unique: false,
@@ -53,6 +59,14 @@ const orderSchema = new mongoose.Schema(
       address: {
         type: String,
         required: [true, "Address is required"],
+        trim: true,
+      },
+      city: {
+        type: String,
+        trim: true,
+      },
+      zone: {
+        type: String,
         trim: true,
       },
     },
@@ -133,6 +147,32 @@ const orderSchema = new mongoose.Schema(
       type: String,
       maxlength: [500, "Note cannot be longer than 500 characters"],
     },
+    tracking: {
+      courier: {
+        type: String,
+        enum: ["Pathao", "RedX", "Steadfast", "Others"],
+        trim: true,
+      },
+      trackingId: {
+        type: String,
+        trim: true,
+      },
+      trackingUrl: {
+        type: String,
+        trim: true,
+        validate: {
+          validator: function (v) {
+            if (!v) return true;
+            return /^(https?|ftp):\/\/[^\s/$.?#].[^\s]*$/.test(v);
+          },
+          message: (props) => `${props.value} is not a valid URL!`,
+        },
+      },
+      createdAt: {
+        type: Date,
+        default: Date.now,
+      },
+    },
   },
   {
     timestamps: true,
@@ -141,7 +181,7 @@ const orderSchema = new mongoose.Schema(
   }
 );
 
-// Pre-save hook to generate order number
+// Order number generation
 orderSchema.pre("save", async function (next) {
   if (!this.isNew) return next();
 
@@ -149,7 +189,6 @@ orderSchema.pre("save", async function (next) {
   const year = now.getFullYear().toString().slice(-2);
   const month = (now.getMonth() + 1).toString().padStart(2, "0");
 
-  // Find count of orders this month
   const count = await mongoose.model("Order").countDocuments({
     createdAt: {
       $gte: new Date(now.getFullYear(), now.getMonth(), 1),
@@ -161,7 +200,7 @@ orderSchema.pre("save", async function (next) {
   next();
 });
 
-// Update delivery date when status changes to delivered
+// Update delivery date if status becomes 'delivered'
 orderSchema.pre("save", function (next) {
   if (this.isModified("status.type") && this.status.type === "delivered") {
     this.status.orderDeliveryDate = new Date();

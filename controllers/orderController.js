@@ -3,6 +3,7 @@ const Product = require("../models/Product");
 const Counter = require("../models/Counter");
 const asyncHandler = require("express-async-handler");
 const mongoose = require("mongoose");
+const { createPathaoOrder } = require("./pathaoController");
 
 // @desc    Create new order
 // @route   POST /api/orders
@@ -188,7 +189,9 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     throw new Error("Invalid order ID format");
   }
 
-  const order = await Order.findById(req.params.id);
+  const order = await Order.findById(req.params.id)
+    .populate("user") // Adjust based on your schema
+    .populate("items.product"); // Adjust based on your schema
 
   if (!order) {
     res.status(404);
@@ -202,25 +205,39 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     "delivered",
     "cancelled",
   ];
+
   if (!validStatuses.includes(status.toLowerCase())) {
     res.status(400);
     throw new Error("Invalid status value");
   }
 
-  // Get the previous status before updating
   const previousStatus = order.status.type;
-
-  // Update the status
   order.status.type = status.toLowerCase();
+  let pathaoError = null;
 
-  // Handle status-specific logic
   if (
     status.toLowerCase() === "processing" &&
     previousStatus !== "processing"
   ) {
-    // Update product quantities only when changing TO processing
     try {
-      await updateProductQuantities(order.items, "decrease");
+      // await updateProductQuantities(order.items, "decrease");
+      console.log("----", order);
+
+      // Create Pathao order only if not already created
+      if (!order.tracking?.courier) {
+        try {
+          const pathaoResponse = await createPathaoOrder(order); // <-- full order passed here
+          // Tracking info is already saved in createPathaoOrder
+        } catch (error) {
+          console.error("Pathao order failed:", error);
+          pathaoError = {
+            message: error.message,
+            details: error.response?.data || null,
+          };
+          // Store the error in the order document
+          order.pathaoError = pathaoError;
+        }
+      }
     } catch (error) {
       res.status(400);
       throw new Error(`Failed to update product quantities: ${error.message}`);
@@ -229,7 +246,6 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
     status.toLowerCase() === "cancelled" &&
     previousStatus === "processing"
   ) {
-    // If cancelling after processing, return the quantities
     try {
       await updateProductQuantities(order.items, "increase");
     } catch (error) {
@@ -246,7 +262,20 @@ const updateOrderStatus = asyncHandler(async (req, res) => {
   }
 
   const updatedOrder = await order.save();
-  res.json(updatedOrder);
+
+  res.json({
+    success: true,
+    order: updatedOrder,
+    pathaoError: pathaoError
+      ? {
+          message: pathaoError.message,
+          details: pathaoError.details,
+        }
+      : null,
+    warning: pathaoError
+      ? "Order status updated but Pathao creation failed"
+      : null,
+  });
 });
 
 // Helper function to update product quantities for array-based sizes
