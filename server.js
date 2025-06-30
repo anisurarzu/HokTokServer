@@ -6,6 +6,7 @@ const productRoutes = require("./routes/productRoutes");
 const orderRoutes = require("./routes/orderRoutes");
 const sliderRoutes = require("./routes/sliderRoutes");
 const storyRoutes = require("./routes/storyRoutes");
+const footerRoutes = require("./routes/footerRoutes"); // Add this line
 
 require("dotenv").config();
 
@@ -18,13 +19,13 @@ connectDB();
 app.use(express.json());
 app.use(cors());
 
-// Auth Routes
-
+// Routes
 app.use("/api/auth", authRoutes);
 app.use("/api", productRoutes);
 app.use("/api/orders", orderRoutes);
 app.use("/api/sliders", sliderRoutes);
 app.use("/api/stories", storyRoutes);
+app.use("/api/footer", footerRoutes); // Add this line
 
 // Root Route
 app.get("/", (req, res) => {
